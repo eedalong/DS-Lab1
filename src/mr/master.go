@@ -97,8 +97,6 @@ func (m *Master) Sync(ping_message *PingMessage, pong_message *PongMessage) erro
 				
 			}
 		pong_message.Worker_id = worker_id
-		//worker_id = WORKER_ID
-		//WORKER_ID = WORKER_ID + 1
 		m.workers = append(m.workers, worker)
 		
 		//log.Println("meet a new worker ----", worker_id)
@@ -296,6 +294,8 @@ func (m *Master) Done() bool {
 
 		}
 	}
+	
+	// check if all map tasks are finished 
 	for i=0; i< len(m.map_tasks); i++{
 		if m.map_tasks[i].task_status != COMPLETED{
 			ret = false
@@ -303,6 +303,8 @@ func (m *Master) Done() bool {
 		}
 		
 	}
+
+	// check if all reduce task is finished 
 	for i=0; i< len(m.reduce_tasks); i++{
 		if m.reduce_tasks[i].task_status != COMPLETED{
 			ret = false 
@@ -310,6 +312,8 @@ func (m *Master) Done() bool {
 			//log.Println("master can not be shutdown because reduce task ", i, "is not finished \n")
 		}
 	}
+	
+	// if we can shut down master, do somt garbage clean job 
 	if ret{
 		m.GarbageClean()
 	}

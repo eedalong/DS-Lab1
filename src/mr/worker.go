@@ -103,6 +103,8 @@ func Worker(mapf func(string, string) []KeyValue,
 		reducer = pong_message.Reducer_count
 		task_files := pong_message.Task_files
 		task_type := pong_message.Task_type
+		
+		// master didnt assign task for me 
 		if task_type == "NONE"{
 			 ping_message = PingMessage{
 				Worker_id : my_id,
@@ -196,6 +198,7 @@ func Worker(mapf func(string, string) []KeyValue,
 				for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
 					j++
 				}
+				// group all keys 
 				values := []string{}
 				for k := i; k < j; k++ {
 					values = append(values, intermediate[k].Value)
