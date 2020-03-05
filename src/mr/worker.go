@@ -9,6 +9,7 @@ import "io/ioutil"
 import "sort"
 import "strings"
 import "sync"
+import "time"
 //
 // Map functions return a slice of KeyValue.
 //
@@ -17,6 +18,7 @@ type KeyValue struct {
 	Value string
 }
 var worker_lock sync.Mutex
+var wait_group sync.WaitGroup
 
 // for sorting by key.
 type ByKey []KeyValue
@@ -26,7 +28,7 @@ func (a ByKey) Len() int           { return len(a) }
 func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
-
+var WORKER_ID string
 //
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
@@ -67,10 +69,62 @@ func getReduceFileName(task_file string) string{
 //
 // main/mrworker.go calls this function.
 //
+func sendPing() error{
+ 	wait_group.Add(1)
+        defer wait_group.Done()	
+	for{
+		worker_lock.Lock()
+		// construct ping message 
+		ping_message := &PingMessage{
+			Worker_id: WORKER_ID,
+			Task_files: []string{},
+			Task_type: "NONE",
+			Result_files: []string{}, 		
+		}
+		worker_lock.Unlock()
+		pong_message := &PongMessage{
+			Worker_id: "NONE",
+			Reducer_count:0,
+			Task_type: "NONE",
+			Task_files: []string{},
+			Exit: false,
+
+		}
+	
+
+		
+		res := call("Master.Ping", ping_message, pong_message)
+		if !res || pong_message.Exit{
+			break	
+		}
+		time.Sleep(time.Second)
+		
+	}
+	return nil 
+
+}
+
+func GarbageClean(intermediate_files []string){
+	index := 0
+	for index =0; index < len(intermediate_files); index++{
+		os.Remove(intermediate_files[index])
+	}
+
+}
+
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 	
+	// ping master perodically (ss)	
+	go sendPing()
+	
+	all_intermediate_files := []string{}
 	my_id := "NONE"
+
+	worker_lock.Lock()
+	WORKER_ID = "NONE"
+	worker_lock.Unlock()
+	
 	pong_message := &PongMessage{
 		Worker_id: "NONE",
 		Reducer_count:0,
@@ -88,13 +142,13 @@ func Worker(mapf func(string, string) []KeyValue,
 	}
 
 	for {
-		worker_lock.Lock()
 		// Sync with master
-		Sync(ping_message, pong_message)		
+		ret := Sync(ping_message, pong_message)		
 		
 		//check if i need to shut down
-		if pong_message.Exit{
-			worker_lock.Unlock()
+		if !ret || pong_message.Exit{
+			wait_group.Wait()
+			GarbageClean(all_intermediate_files)
 			os.Exit(0)
 		}
 		
@@ -103,7 +157,11 @@ func Worker(mapf func(string, string) []KeyValue,
 		reducer = pong_message.Reducer_count
 		task_files := pong_message.Task_files
 		task_type := pong_message.Task_type
-		
+	
+		worker_lock.Lock()
+		WORKER_ID = my_id
+		worker_lock.Unlock()
+	
 		// master didnt assign task for me 
 		if task_type == "NONE"{
 			 ping_message = PingMessage{
@@ -168,6 +226,7 @@ func Worker(mapf func(string, string) []KeyValue,
 				Result_files : file_names,
 			
 			}
+			all_intermediate_files = append(all_intermediate_files, file_names...)
 		}
 		
 		if  task_type == "REDUCE"{
@@ -224,7 +283,6 @@ func Worker(mapf func(string, string) []KeyValue,
 
 
 		}
-		worker_lock.Unlock()
 
 
 	}
@@ -236,11 +294,11 @@ func Worker(mapf func(string, string) []KeyValue,
 //
 // the RPC argument and reply types are defined in rpc.go.
 //
-func Sync(ping_message PingMessage, pong_message *PongMessage) {
+func Sync(ping_message PingMessage, pong_message *PongMessage) bool  {
 
 
 	// send the RPC request, wait for the reply.
-	call("Master.Sync", &ping_message, pong_message)
+	return call("Master.Sync", &ping_message, pong_message)
 
 }
 

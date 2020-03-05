@@ -14,11 +14,12 @@ const IDLE = 0
 const IN_PROGRESS = 1 
 const COMPLETED= 2
 const DEAD = 3
+const RUNNING = 5
+const STRUGGLE = 4
 
 const WORKER_TIMEOUT = 10
 
 var REDUCER int 
-var WORKER_ID  int
 var lock sync.Mutex
 
 type TaskWorker struct{
@@ -29,10 +30,15 @@ type TaskWorker struct{
     
 } 
 
-type Task struct {
-    task_files []string
-    task_status int
-    worker_id string 
+
+// Task should have task id  
+type Task struct{
+	task_id string 
+	task_files []string
+	task_status int 
+	worker_id string
+	started_time int64
+	finished_time int64
 }
 
 type Master struct {
@@ -64,6 +70,7 @@ func sameTask(task1 []string, task2 []string) bool{
 
 }
 
+
 func getReduceIndex(task_file string) int{
 	res := strings.Split(task_file, "-")
 	
@@ -73,6 +80,30 @@ func getReduceIndex(task_file string) int{
 
 }
 
+// ping between master and workers 
+
+func (m *Master) Ping(ping_message *PingMessage, pong_message *PongMessage) error {
+	worker_id := ping_message.Worker_id
+	index := 0
+	lock.Lock()
+	defer lock.Unlock()
+	if worker_id == "NONE"{
+
+		return nil
+	}
+
+	for index = 0; index < len(m.workers); index ++{
+		if m.workers[index].worker_id == worker_id && m.workers[index].status == RUNNING{
+			m.workers[index].pong_receive = time.Now().Unix()
+			pong_message.Exit = false 
+			return nil 
+		}
+	}
+	pong_message.Exit = true	
+	return nil
+
+
+}
 // Your code here -- RPC handlers for the worker to call.
 
 //
@@ -91,7 +122,7 @@ func (m *Master) Sync(ping_message *PingMessage, pong_message *PongMessage) erro
 		worker_id = RandomString(6)
 		worker := TaskWorker{
 				worker_id: worker_id,
-				status:IDLE,
+				status:RUNNING,
 				tasks: []Task{},
 				pong_receive: time.Now().Unix(),
 				
@@ -124,6 +155,7 @@ func (m *Master) Sync(ping_message *PingMessage, pong_message *PongMessage) erro
 
 					//log.Println("master --------: add new reduce task from ", worker_id, "  update task info ", index)
 					m.map_tasks[index].task_status = COMPLETED
+					m.map_tasks[index].finished_time = time.Now().Unix()
 					break
 				}
 			}
@@ -141,6 +173,7 @@ func (m *Master) Sync(ping_message *PingMessage, pong_message *PongMessage) erro
 					
 					//log.Println("master -------: update reduce task information from ", worker_id, " reduce task index :", index)
 					m.reduce_tasks[index].task_status = COMPLETED
+					m.reduce_tasks[index].finished_time = time.Now().Unix()
 					break
 				}
 			}
@@ -161,6 +194,7 @@ func (m *Master) Sync(ping_message *PingMessage, pong_message *PongMessage) erro
 			// change task status 
 			m.map_tasks[index].task_status = IN_PROGRESS
 			m.map_tasks[index].worker_id = worker_id
+			m.map_tasks[index].started_time = time.Now().Unix()
 			//log.Println("assign map task for worker ------", worker_id, " map task index ", index)
 			return nil 
 		
@@ -198,7 +232,7 @@ func (m *Master) Sync(ping_message *PingMessage, pong_message *PongMessage) erro
 			
 			m.reduce_tasks[index].task_status = IN_PROGRESS
 			m.reduce_tasks[index].worker_id = ping_message.Worker_id
-		
+			m.reduce_tasks[index].started_time = time.Now().Unix()
 			//log.Println("assign reduce task for worker ------", pong_message.Worker_id, " task index ", index)
 			return nil 
 
@@ -226,7 +260,13 @@ func (m *Master) Sync(ping_message *PingMessage, pong_message *PongMessage) erro
 	pong_message.Task_files = []string{}
 	pong_message.Exit = true
 	pong_message.Worker_id = ping_message.Worker_id
-
+	
+	// set worker status
+	for index=0; index< len(m.workers); index++{
+		if m.workers[index].worker_id == ping_message.Worker_id{
+			m.workers[index].status = DEAD
+		}
+	}
 	return nil
 }
 
@@ -247,19 +287,6 @@ func (m *Master) server() {
 	go http.Serve(l, nil)
 }
 
-func (m *Master) GarbageClean() {
-	
-	index := 0
-	for index = 0; index < len(m.reduce_tasks); index++{
-		file_index := 0
-		for file_index = 0;file_index < len(m.reduce_tasks[index].task_files); file_index++{
-
-			os.Remove(m.reduce_tasks[index].task_files[file_index])
-		}
-
-	}
-
-}
 
 //
 // main/mrmaster.go calls Done() periodically to find out
@@ -271,9 +298,9 @@ func (m *Master) Done() bool {
 	ret := true
 	// check all woker_status and reset tasks related to failed workers
 	i:=0 
-	for i =0; i< len(m.workers);i++{
 
-		if time.Now().Unix() - m.workers[i].pong_receive > WORKER_TIMEOUT {
+	for i =0; i< len(m.workers);i++{
+		if m.workers[i].status == RUNNING && time.Now().Unix() - m.workers[i].pong_receive > WORKER_TIMEOUT {
 			m.workers[i].status = DEAD
 			for index:=0; index < len(m.map_tasks); index++{
 				if m.map_tasks[index].worker_id == m.workers[i].worker_id && m.map_tasks[index].task_status == IN_PROGRESS{
@@ -288,10 +315,10 @@ func (m *Master) Done() bool {
 					ret = false
 				}
 			}
-			//log.Println("worker ", m.workers[i].worker_id, " is dead")
-			// remove the worker
-			m.workers = append(m.workers[:i], m.workers[i+1:]...)
-
+		}
+		// we should wait all workers to be dead 
+		if m.workers[i].status == RUNNING{
+			ret = false 
 		}
 	}
 	
@@ -311,11 +338,6 @@ func (m *Master) Done() bool {
 			
 			//log.Println("master can not be shutdown because reduce task ", i, "is not finished \n")
 		}
-	}
-	
-	// if we can shut down master, do somt garbage clean job 
-	if ret{
-		m.GarbageClean()
 	}
 
 	lock.Unlock()
@@ -343,6 +365,8 @@ func MakeMaster(files []string, nReduce int) *Master {
 		task.task_files = []string{files[index]}
 		task.task_status = IDLE
 		task.worker_id = "NONE"
+		task.started_time = -1
+		task.finished_time = -1
 		m.map_tasks = append(m.map_tasks, task)
 	}
 	for index=0; index < nReduce; index++{
@@ -350,10 +374,11 @@ func MakeMaster(files []string, nReduce int) *Master {
 		task.task_files = []string{}
 		task.task_status = IDLE
 		task.worker_id = "NONE"
+		task.started_time = -1
+		task.finished_time = -1
 		m.reduce_tasks = append(m.reduce_tasks, task)
 	}
 	
-	WORKER_ID = 0
 	REDUCER = nReduce
 	
 	m.server()
