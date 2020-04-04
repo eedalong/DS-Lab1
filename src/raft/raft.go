@@ -1,5 +1,3 @@
-package raft
-
 //
 // this is an outline of the API that raft must expose to
 // the service (or tester). see comments below for
@@ -16,46 +14,218 @@ package raft
 //   should send an ApplyMsg to the service (or tester)
 //   in the same server.
 //
+package raft 
 
+import "math/rand"
+import "fmt"
+import "math"
 import "sync"
 import "sync/atomic"
 import "../labrpc"
-
+import "time"
 // import "bytes"
 // import "../labgob"
 
+// None is a placeholder node ID used when there is no leader.
+const None int = -1
+const noLimit = math.MaxUint64
+type StateType int 
 
-
-//
-// as each Raft peer becomes aware that successive log entries are
-// committed, the peer should send an ApplyMsg to the service (or
-// tester) on the same server, via the applyCh passed to Make(). set
-// CommandValid to true to indicate that the ApplyMsg contains a newly
-// committed log entry.
-//
-// in Lab 3 you'll want to send other kinds of messages (e.g.,
-// snapshots) on the applyCh; at that point you can add fields to
-// ApplyMsg, but set CommandValid to false for these other uses.
-//
-type ApplyMsg struct {
-	CommandValid bool
-	Command      interface{}
-	CommandIndex int
+const (
+	StateFollower = 0
+	StateCandidate = 1
+	StateLeader    = 2
+)
+var stmap = [...]string{
+	"StateFollower",
+	"StateCandidate",
+	"StateLeader",
+	"StatePreCandidate",
 }
 
-//
-// A Go object implementing a single Raft peer.
-//
 type Raft struct {
-	mu        sync.Mutex          // Lock to protect shared access to this peer's state
+        mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
-	me        int                 // this peer's index into peers[]
 	dead      int32               // set by Kill()
 
-	// Your data here (2A, 2B, 2C).
-	// Look at the paper's Figure 2 for a description of what
-	// state a Raft server must maintain.
+        id int 
+
+	Term int 
+	vote int 
+	state int 
+
+	// the log
+	raftLog *RaftLog
+
+	tracker ProgressTracker
+
+
+	msgs []Message
+
+	// the leader id
+	lead  int 
+
+	checkQuorum bool
+	preVote     bool
+	votedNum    int 	
+	heartbeatElapsed int 
+	electionElapsed int 
+	heartbeatTimeout int
+	electionTimeout  int
+	// randomizedElectionTimeout is a random number between
+	// [electiontimeout, 2 * electiontimeout - 1]. It gets reset
+	// when raft changes its state to follower or candidate.
+	randomizedElectionTimeout int
+
+
+}
+
+func (rf * Raft) becomeLeader(){
+	fmt.Println("INSTANCE ", rf.id, " BECOME LEADER`")
+	
+	// update info of myself 
+	rf.state = StateLeader
+	rf.lead = rf.id
+	
+	// broadCast info
+	index := 0 
+	log_index, log_term := rf.raftLog.Lastlog()
+	for index=0; index < len(rf.peers); index++{
+		if index == rf.id {
+			continue 
+		}
+		heartbeat := Message{
+			From: rf.id,
+			To: index,
+			Type:MsgHeartbeat,
+			Term: rf.Term,
+			LogTerm: log_term,
+			Index: log_index,
+		}
+		reply :=  &Message{} 
+		go rf.send(heartbeat, reply)
+	} 
+}
+
+func (rf *Raft) Heartbeat(args *Message) *Message{
+	//fmt.Println("INSTANCE ", rf.id, rf.Term, "RECEIVE HEARTBEAT FROM", args.From, args.Term)
+	reply := &Message{
+		From: rf.id,
+		Term: rf.Term,
+
+	}
+	if rf.Term > args.Term{
+		return reply 
+	}
+	if (rf.lead == None || rf.lead == args.From){
+		//fmt.Println("INSTANCE ", rf.id, "BECOME FOLLOWER OF ", args.From)
+		rf.becomeFollower(args.Term, args.From)
+		return reply 
+	}
+	if args.Term > rf.Term && rf.state == StateLeader{
+		//fmt.Println("INSTANCE ", rf.id, "BECOME FOLLOWER OF ", args.From)
+		rf.becomeFollower(args.Term, args.From)
+		return reply 
+
+	}
+	return reply 
+
+}
+func (rf *Raft) kickHeartbeat() error {
+	if rf.state != StateLeader{
+		return nil
+	}
+	rf.mu.Lock()
+	rf.heartbeatElapsed ++
+	index := 0
+	log_index, log_term := rf.raftLog.Lastlog()
+	rf.mu.Unlock()
+	if rf.heartbeatElapsed >= rf.heartbeatTimeout{
+		rf.heartbeatElapsed = 0
+		for index = 0; index < len(rf.peers); index ++ {
+			if index == rf.id{
+				continue 
+			}
+			heartbeatMessage := Message{
+				From: rf.id,
+				To: index,
+				Type: MsgHeartbeat,
+				Term: rf.Term,
+				Index: log_index,
+				LogTerm: log_term,
+			}
+
+
+			go rf.send(heartbeatMessage, nil)
+		}
+	}
+	return nil 
+
+}
+func (rf * Raft) becomeCandidate() error{
+	
+	rf.mu.Lock()	
+	//fmt.Println("INSTANCE ", rf.id, "BECOME CANDIDATE")
+	rf.lead = None
+	rf.state = StateCandidate
+	rf.electionElapsed = 0
+	rf.electionTimeout = rand.Intn(50) + 100
+	rf.Term ++
+	rf.vote = rf.id
+	rf.tracker.ClearVotes(len(rf.peers))
+	rf.tracker.Update(rf.id, true)
+	rf.mu.Unlock()
+	return nil 
+
+}
+func (rf  *Raft)kickElection() error {
+	if rf.state == StateLeader{
+		return  nil 
+	}
+	rf.mu.Lock()
+	rf.electionElapsed ++
+	rf.mu.Unlock()
+	index := 0 
+	if rf.electionElapsed >= rf.electionTimeout{
+		
+
+		rf.becomeCandidate()
+		//fmt.Println("INSTANCE ", rf.id, "START ELECTION")
+
+		logIndex, logTerm := rf.raftLog.Lastlog()
+		for index = 0; index < len(rf.peers); index++{
+			if index == rf.id{
+				continue 
+			}
+			voteMessage := Message{
+				From: rf.id,
+				To: index,
+				Type: MsgVote,
+				Term: rf.Term,
+				Index: logIndex,
+				LogTerm: logTerm,
+			}
+
+
+			go rf.send(voteMessage, nil)
+		}
+	}
+	return nil 
+
+}
+
+func (rf *Raft) Tick(){
+	for {
+		// sleep for a unit time 
+		time.Sleep(10 * time.Millisecond)
+		rf.kickHeartbeat()
+		rf.kickElection()
+		if rf.killed(){
+			break
+		}
+
+	}
 
 }
 
@@ -63,9 +233,13 @@ type Raft struct {
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	var term int
 	var isleader bool
 	// Your code here (2A).
+        term = rf.Term
+        isleader = (rf.lead == rf.id)
 	return term, isleader
 }
 
@@ -109,29 +283,58 @@ func (rf *Raft) readPersist(data []byte) {
 }
 
 
-
-
-//
-// example RequestVote RPC arguments structure.
-// field names must start with capital letters!
-//
-type RequestVoteArgs struct {
-	// Your data here (2A, 2B).
-}
-
-//
-// example RequestVote RPC reply structure.
-// field names must start with capital letters!
-//
-type RequestVoteReply struct {
-	// Your data here (2A).
-}
-
-//
 // example RequestVote RPC handler.
 //
-func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+func (rf *Raft) MayVote(args *Message) *Message{
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	log_index, log_term := rf.raftLog.Lastlog()
+	reply := &Message{
+		Type: MsgVoteResp,
+		From: rf.id,
+		To: args.From,
+		Term: rf.Term,
+		LogTerm: log_term,
+		Index: log_index,
+	}
+	if rf.state == StateLeader{
+		reply.Reject = true
+		return reply 
+	}
+	// when leader is alive, ignore the request
+	if rf.lead != None && rf.electionElapsed < rf.electionTimeout{
+		
+		reply.Reject = true
+		return reply 
+	}
+	
 	// Your code here (2A, 2B).
+        if args.Term < rf.Term || rf.vote != None{
+		//fmt.Println("INSTANCE ",rf.id,"REJECT ", args.From, "BECAUSE ALREADY VOTED", "DETAILS: ",args.Term, " ", rf.Term, " ", rf.vote, rf.lead)	
+		reply.Reject = true
+		return reply 
+	}
+	if !rf.raftLog.MoreUpdate(args.Index, args.LogTerm){	
+		
+		//fmt.Println("INSTANCE ",rf.id,"REJECT ", args.From, "BECAUSE STALE DATA")	
+		reply.Reject = true 
+		return reply 
+	}
+	reply.Reject = false
+	rf.vote = args.From
+	//fmt.Println("INSTANCE ", rf.id, "VOTE FOR ", args.From)
+	return reply
+
+}
+func (rf *Raft) RequestVote(args *Message, reply *Message) {
+	if args.Type == MsgVote{
+		reply = rf.MayVote(args)
+		return
+	}
+	if args.Type == MsgHeartbeat{
+		reply = rf.Heartbeat(args)
+		return 
+	}
 }
 
 //
@@ -163,9 +366,47 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
 //
-func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-	return ok
+func (rf *Raft) send(args Message, reply *Message ) bool {
+        if args.Type == MsgHeartbeat{
+		reply = &Message{}
+		//fmt.Println("INSTANCE", rf.id, "SENDING HEARTBEAT TO", args.To)
+		ok := rf.peers[args.To].Call("Raft.RequestVote", &args, reply)
+		//fmt.Println("CHECK NETWORK STATUS FOR ", rf.id, "FROM", reply.From, "IS ", ok)
+		rf.mu.Lock()
+		rf.tracker.Active(reply.From, ok)
+		if !rf.tracker.CheckQuroum(len(rf.peers)) {
+			rf.mu.Unlock()
+			//fmt.Println("INSTANCE ", rf.id, "BACK OFF FROM LEADER")
+			rf.becomeFollower(rf.Term, None)	
+			return ok
+		}
+		rf.mu.Unlock()
+		if ok && reply.Term > rf.Term{
+			rf.becomeFollower(reply.Term, None)
+		}
+		
+		return ok 
+	} else if  args.Type == MsgVote{
+		reply = &Message{}
+		ok := rf.peers[args.To].Call("Raft.RequestVote", &args, reply)
+		rf.mu.Lock()
+		// check vote result
+		if ok{
+			
+			rf.tracker.Update(reply.From, !reply.Reject)	
+		}
+		// update Term 
+		granted := rf.tracker.Granted()
+		// check if i win most votes 
+		if rf.state != StateLeader && 2 * granted > len(rf.peers){
+			//fmt.Println("INSTANCE ", rf.id, "BECOME LEDER" )
+			rf.becomeLeader()
+		}
+		rf.mu.Unlock()
+		// we become leader if we accept more than half votes
+		return ok 
+	}
+	return true
 }
 
 
@@ -214,6 +455,17 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
+func (rf *Raft) becomeFollower(Term int, Lead int){
+	rf.mu.Lock()
+	rf.Term = Term
+	rf.lead = Lead
+	rf.vote = None 
+	rf.tracker.ClearVotes(len(rf.peers))
+	rf.state = StateFollower
+	rf.electionElapsed = 0
+	rf.electionTimeout = rand.Intn(50) + 100
+	rf.mu.Unlock()
+}
 //
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
@@ -230,13 +482,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf := &Raft{}
 	rf.peers = peers
 	rf.persister = persister
-	rf.me = me
-
-	// Your initialization code here (2A, 2B, 2C).
-
+	rf.id = me
+	rf.vote = None 
+	rf.heartbeatTimeout = 10
+	rand.Seed(time.Now().UnixNano())
+	rf.raftLog = NewLog()
+	rf.tracker = NewTracker(len(peers))
+	// Your initialization code here (2A, 2B, 2C)
+        rf.becomeFollower(1, None)
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
-
+	go rf.Tick()
 
 	return rf
 }
