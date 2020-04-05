@@ -67,8 +67,6 @@ type Raft struct {
 	lead  int 
 
 	checkQuorum bool
-	preVote     bool
-	votedNum    int 	
 	heartbeatElapsed int 
 	electionElapsed int 
 	heartbeatTimeout int
@@ -397,12 +395,13 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 		}
 		// update Term 
 		granted := rf.tracker.Granted()
+		
+		rf.mu.Unlock()
 		// check if i win most votes 
 		if rf.state != StateLeader && 2 * granted > len(rf.peers){
 			//fmt.Println("INSTANCE ", rf.id, "BECOME LEDER" )
 			rf.becomeLeader()
 		}
-		rf.mu.Unlock()
 		// we become leader if we accept more than half votes
 		return ok 
 	}
