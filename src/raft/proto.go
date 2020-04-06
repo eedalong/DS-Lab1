@@ -108,7 +108,6 @@ var EntryType_value = map[string]int32{
 type Entry struct {
 	Term             int
 	Index            int 
-	Type             EntryType
 	Data             interface{}
 }
 
@@ -122,7 +121,6 @@ type Message struct {
 	Index            int
 	Entries          []Entry
 	Commit           int
-	Reject           bool
-	RejectHint       int
+	Reject           string
 }
 

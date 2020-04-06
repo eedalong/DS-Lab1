@@ -3,6 +3,7 @@ package raft
 
 import "errors"
 import "sync"
+import "fmt"
 // ErrCompacted is returned by Storage.Entries/Compact when a requested
 // index is unavailable because it predates the last snapshot.
 var ErrCompacted = errors.New("requested index is unavailable due to compaction")
@@ -30,33 +31,41 @@ type MemoryStorage struct {
 
 // NewMemoryStorage creates an empty MemoryStorage.
 func NewMemoryStorage() MemoryStorage {
-	return MemoryStorage{
+	ms := MemoryStorage{
 		// When starting from scratch populate the list with a dummy entry at term zero.
 		ents: make([]Entry, 1),
 	}
+	ms.ents[0] = Entry{
+		Term:0,
+		Index:0,
+		Data: 0,
+	}
+	return ms 
 }
 
-/*
 // Entries implements the Storage interface.
-func (ms *MemoryStorage) Entries(lo, hi, maxSize int) ([]Entry, error) {
+func (ms *MemoryStorage) Entries(lo, hi int) ([]Entry, error) {
 	ms.Lock()
 	defer ms.Unlock()
 	offset := ms.ents[0].Index
-	if lo <= offset {
+	if lo < offset {
+		fmt.Println("LOGS ARE COMPACTED FOR START", lo)
 		return nil, ErrCompacted
 	}
 	if hi > ms.lastIndex()+1 {
 		fmt.Printf("entries' hi(%d) is out of bound lastindex(%d)", hi, ms.lastIndex())
+		return nil, ErrCompacted
 	}
 	// only contains dummy entries.
+	/*
 	if len(ms.ents) == 1 {
 		return nil, ErrUnavailable
 	}
+	*/
 
 	ents := ms.ents[lo-offset : hi-offset]
-	return limitSize(ents, maxSize), nil
+	return ents, nil
 }
-*/
 // Term implements the Storage interface.
 func (ms *MemoryStorage) Term(i int) (int, error) {
 	ms.Lock()
@@ -93,4 +102,20 @@ func (ms *MemoryStorage) FirstIndex() (int, error) {
 func (ms *MemoryStorage) firstIndex() int {
 	return ms.ents[0].Index + 1
 }
+
+func (ms *MemoryStorage) Append(ents []Entry)(bool, error){
+
+	ms.Lock()
+	defer ms.Unlock()
+	offset := ms.ents[0].Index
+	ms.ents = append(ms.ents[:ents[0].Index - offset], ents...)
+	return true, nil 
+}
+func(ms *MemoryStorage) Delete(entry Entry){
+	ms.Lock()
+	defer ms.Unlock()
+	ms.ents =  ms.ents[: len(ms.ents)-1]
+	return
+}
+
 

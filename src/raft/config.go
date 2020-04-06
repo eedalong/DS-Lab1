@@ -173,6 +173,7 @@ func (cfg *config) start1(i int) {
 				// ignore other types of ApplyMsg
 			} else {
 				v := m.Command
+				//fmt.Println("CHECK COMMAND FROM ", i, m)
 				cfg.mu.Lock()
 				for j := 0; j < len(cfg.logs); j++ {
 					if old, oldok := cfg.logs[j][m.CommandIndex]; oldok && old != v {
@@ -370,6 +371,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 
 		cfg.mu.Lock()
 		cmd1, ok := cfg.logs[i][index]
+		//fmt.Println("CHECK LOGS IN CONFIG", cfg.logs)
 		cfg.mu.Unlock()
 
 		if ok {
@@ -451,11 +453,14 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 		}
 
 		if index != -1 {
+			
 			// somebody claimed to be the leader and to have
 			// submitted our command; wait a while for agreement.
 			t1 := time.Now()
 			for time.Since(t1).Seconds() < 2 {
 				nd, cmd1 := cfg.nCommitted(index)
+				
+				//fmt.Println("CHECK ND = ", nd, "INDEX = ", index)
 				if nd > 0 && nd >= expectedServers {
 					// committed
 					if cmd1 == cmd {
