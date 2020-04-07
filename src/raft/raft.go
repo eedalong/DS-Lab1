@@ -30,6 +30,8 @@ import "time"
 const None int = -1
 const noLimit = math.MaxUint64
 type StateType int 
+var lock sync.Mutex
+
 const (
 	StateFollower = 0
 	StateCandidate = 1
@@ -418,6 +420,8 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 
 
 func (rf *Raft) RequestVote(args *Message, reply *Message) {
+	lock.Lock()
+	defer lock.Unlock()
 	if args.Type == MsgVote{
 		rf.MayVote(args, reply)
 		return
