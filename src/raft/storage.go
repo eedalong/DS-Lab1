@@ -103,6 +103,7 @@ func (ms *MemoryStorage) firstIndex() int {
 	return ms.ents[0].Index + 1
 }
 
+// ONLY DELETE LOGS FOLLOWING THE LOG THAT DOESNT MATCH 
 func (ms *MemoryStorage) Append(ents []Entry)(bool, error){
 
 	last_index, _ := ms.LastIndex()

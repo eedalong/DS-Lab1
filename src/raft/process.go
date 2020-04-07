@@ -124,3 +124,10 @@ func (tracker *ProgressTracker) State(follower_index int)(int, int){
 	defer tracker.mu.Unlock()
 	return tracker.Progresses[follower_index].Match, tracker.Progresses[follower_index].Next
 }
+
+func (tracker *ProgressTracker) ResetAll(peers int, last_index int){
+	index := 0 
+	for index = 0; index < peers ;index++{
+		tracker.SetState(index, 0, last_index+1)
+	}
+}
