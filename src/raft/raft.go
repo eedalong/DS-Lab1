@@ -132,6 +132,7 @@ func (rf *Raft) FollowerApply(){
 			CommandIndex: ents[0].Index,
 		}
 	}
+	rf.raftLog.SetApply(committed + 1)
 
 }
 func (rf *Raft) Heartbeat(args *Message, reply *Message){
@@ -543,6 +544,8 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	index := -1
 	term := rf.Term
 	isLeader := true
