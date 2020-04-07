@@ -335,6 +335,8 @@ func (rf *Raft) MayVote(args *Message, reply *Message){
 	if args.Term > rf.Term{
 		rf.becomeFollower(args.Term, None)
 	}
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	reply.Type = MsgVoteResp
 	reply.From = rf.id
 	reply.Reject = "TRUE"
@@ -370,12 +372,10 @@ func (rf *Raft) MayVote(args *Message, reply *Message){
 
 		return 
 	}
-	rf.mu.Lock()
 	// GRANT A VOTE 
 	reply.Reject = "FALSE"
 	rf.electionElapsed = 0
 	rf.vote = args.From
-	rf.mu.Unlock()
 	fmt.Println("INSTANCE ", rf.id, "VOTE FOR ", args.From, "DETAIL", rf.Term,args.Term)
 
 }
@@ -387,7 +387,9 @@ func (rf *Raft) min(val1, val2 int)int {
 }
 
 func (rf *Raft) AppendEntries(args* Message, reply *Message){
-	
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()	
 	reply.From = rf.id
 	reply.To = args.From
 	reply.Term = rf.Term
@@ -400,7 +402,7 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 		reply.Reject = "TRUE"
 		return 
 	}
-	rf.becomeFollower(args.Term, args.From)
+	rf.electionElapsed = 0
 	appendRes := rf.raftLog.MayAppend(args.Entries)
 	commitIndex := rf.raftLog.Commit()
 	if appendRes && args.Commit > commitIndex{
