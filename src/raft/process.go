@@ -90,7 +90,11 @@ func (tracker *ProgressTracker) DecrNext(follower int,val int) {
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
 	tracker.Progresses[follower].Next -= val
+	if tracker.Progresses[follower].Next < 1{
+		tracker.Progresses[follower].Next = 1
+	}
 	return 	
+	
 }
 func (tracker *ProgressTracker) SetState(follower int, match int, next int){
 	tracker.mu.Lock()

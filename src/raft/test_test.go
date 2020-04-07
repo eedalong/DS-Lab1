@@ -363,7 +363,6 @@ func TestRejoin2B(t *testing.T) {
 }
 
 func TestBackup2B(t *testing.T) {
-	return 
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -459,7 +458,6 @@ func TestCount2B(t *testing.T) {
 
 	var total2 int
 	var success bool
-	return 
 loop:
 	for try := 0; try < 5; try++ {
 		if try > 0 {
@@ -538,11 +536,9 @@ loop:
 	for j := 0; j < servers; j++ {
 		total3 += cfg.rpcCount(j)
 	}
-
 	if total3-total2 > 3*20 {
 		t.Fatalf("too many RPCs (%v) for 1 second of idleness\n", total3-total2)
 	}
-
 	cfg.end()
 }
 
