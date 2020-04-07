@@ -105,10 +105,18 @@ func (ms *MemoryStorage) firstIndex() int {
 
 func (ms *MemoryStorage) Append(ents []Entry)(bool, error){
 
+	last_index, _ := ms.LastIndex()
 	ms.Lock()
 	defer ms.Unlock()
 	offset := ms.ents[0].Index
-	ms.ents = append(ms.ents[:ents[0].Index - offset], ents...)
+	index :=0
+	for index =0; index < len(ents); index++{
+		if ents[index].Index > last_index ||ms.ents[ents[index].Index].Term != ents[index].Term{
+		
+			ms.ents = append(ms.ents[:ents[index].Index - offset], ents[index:]...)
+			break
+		}
+	}
 	return true, nil 
 }
 func(ms *MemoryStorage) Delete(entry Entry){
