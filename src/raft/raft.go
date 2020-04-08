@@ -270,7 +270,7 @@ func (rf *Raft) Tick(){
 		rf.kickElection()
 		if rf.state == StateLeader{	
 			rf.UpdateLeader()
-			//rf.SyncCommand(-1)
+			rf.SyncCommand(-1)
 		}
 		if rf.state == StateFollower{
 			rf.FollowerApply()
