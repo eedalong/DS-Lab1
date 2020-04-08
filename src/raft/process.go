@@ -20,15 +20,18 @@ type ProgressTracker struct {
 	Progresses ProgressMap
 
 	Votes map[int]bool
+	HeartbeatElapsed map[int]int
 
 }
 
 func NewTracker(peers int) ProgressTracker{
 	Votes := make(map[int]bool)
 	Progresses := make(map[int]*Progress)
+	HeartbeatElapsed := make(map[int]int)
 	index :=0
 	for index = 0; index < peers; index++{
 		Votes[index] = false
+		HeartbeatElapsed[index] = 0
 		Progresses[index] = &Progress{
 			RecentActive: 0,
 			Match: 0,
@@ -38,6 +41,7 @@ func NewTracker(peers int) ProgressTracker{
 	return ProgressTracker{
 		Progresses: Progresses,
 		Votes: Votes,
+		HeartbeatElapsed: HeartbeatElapsed,
 	}
 }
 
@@ -130,4 +134,24 @@ func (tracker *ProgressTracker) ResetAll(peers int, last_index int){
 	for index = 0; index < peers ;index++{
 		tracker.SetState(index, 0, last_index+1)
 	}
+}
+func (tracker *ProgressTracker) IncrHeartbeat(peers int){
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	index := 0
+	for index = 0; index < peers; index++{
+		tracker.HeartbeatElapsed[index] ++
+	}
+}
+func (tracker *ProgressTracker) ResetHeartbeat(follower int){
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	tracker.HeartbeatElapsed[follower]  = 0
+	
+}
+func (tracker *ProgressTracker) Heartbeat(follower int)int{
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	return tracker.HeartbeatElapsed[follower] 
+	
 }

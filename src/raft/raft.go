@@ -260,7 +260,7 @@ func (rf *Raft) Tick(){
 	for {
 		// sleep for a unit time 
 		time.Sleep(10 * time.Millisecond)
-		rf.kickHeartbeat()
+		//rf.kickHeartbeat()
 		rf.kickElection()
 		if rf.state == StateLeader{	
 			rf.UpdateLeader()
@@ -486,7 +486,7 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 			return ok 
 		}
 		if ok && reply.Term == rf.Term{
-			rf.UpdateFollower(&args, reply)
+			//rf.UpdateFollower(&args, reply)
 		}
 
 		return ok 
@@ -625,7 +625,7 @@ func (rf *Raft) UpdateFollower(args *Message, reply *Message){
 			return 
 		}
 		rf.tracker.DecrNext(reply.From, 1)
-		rf.SyncCommand(reply.From)	
+		//rf.SyncCommand(reply.From)	
 		return
 	}
 
@@ -640,7 +640,7 @@ func (rf *Raft) UpdateFollower(args *Message, reply *Message){
 }
 
 func (rf *Raft)SyncCommand(follower int){
-
+	rf.tracker.IncrHeartbeat(len(rf.peers))	
 	index := 0
 	for index=0;index<len(rf.peers); index++{
 		// check for each follower's nextIndex
@@ -650,24 +650,29 @@ func (rf *Raft)SyncCommand(follower int){
 		// check if leader can send append msg
 		
 		rf.mu.Lock()	
-		_, next := rf.tracker.State(index)
+		match, next := rf.tracker.State(index)
 		last_index, last_term := rf.raftLog.Lastlog()
 		leaderCommit := rf.raftLog.Commit()
 		ents, _:= rf.raftLog.Logs(next-1, last_index +1)
 		// send AppendEntry Message
 		message := Message{
-			Term: last_term,
+			Term: rf.Term,
 			Commit: leaderCommit,
 			To: index,
 			From: rf.id,
 			Entries: ents,
 			Type:MsgApp,
+			LogTerm: last_term,
 		}
 		rf.mu.Unlock()
-		if last_index < next{
-			continue 
+		if match == last_index{
+			if rf.tracker.Heartbeat(index) <= rf.heartbeatTimeout{
+				continue 
+			}
+			
+			message.Type =  MsgHeartbeat
 		}
-
+		rf.tracker.ResetHeartbeat(index)
 		go rf.send(message, nil)
 	}
 }
@@ -720,7 +725,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.persister = persister
 	rf.id = me
 	rf.vote = None 
-	rf.heartbeatTimeout = 10
+	rf.heartbeatTimeout = 15
 	rand.Seed(time.Now().UnixNano())
 	rf.raftLog = NewLog()
 	rf.applyChan  = applyCh	
