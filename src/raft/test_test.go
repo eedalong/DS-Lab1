@@ -136,7 +136,7 @@ func TestRPCBytes2B(t *testing.T) {
 	got := bytes1 - bytes0
 	expected := int64(servers) * sent
 	if got > expected+50000 {
-		//t.Fatalf("too many RPC bytes; got %v, expected %v", got, expected)
+		t.Fatalf("too many RPC bytes; got %v, expected %v", got, expected)
 	}
 
 	cfg.end()

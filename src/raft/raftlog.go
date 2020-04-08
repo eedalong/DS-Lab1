@@ -66,10 +66,10 @@ func (rflog *RaftLog) Logs(lo, hi int)([]Entry, error){
 	ents, err := rflog.storage.Entries(lo, hi)
 	return ents, err
 }
-func (rflog *RaftLog) MayAppend(ents []Entry) bool {
+func (rflog *RaftLog) MayAppend(prevIndex int, prevTerm int, ents []Entry) bool {
 	// check previous log, fails if doesnt match
-	previous_term, _:= rflog.storage.Term(ents[0].Index)
-	if previous_term != ents[0].Term{
+	previous_term, _:= rflog.storage.Term(prevIndex)
+	if previous_term != prevTerm{
 		//logs, _ := rflog.Logs(0, rflog.LastIndex()+1) 
 		//fmt.Println("REJECTED ", logs)
 		return false

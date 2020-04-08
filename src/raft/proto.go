@@ -122,5 +122,7 @@ type Message struct {
 	Entries          []Entry
 	Commit           int
 	Reject           bool
+	PrevIndex	 int
+	PrevTerm	 int
 }
 

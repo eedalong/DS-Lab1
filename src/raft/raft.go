@@ -157,12 +157,12 @@ func (rf *Raft) Heartbeat(args *Message, reply *Message){
 	if (rf.lead == None || rf.lead == args.From){
 		//rf.mu.Lock()
 		//fmt.Println("INSTANCE ", rf.id, "BECOME FOLLOWER OF ", args.From)
-		if rf.raftLog.Term(args.Entries[0].Index)== args.Entries[0].Term{
+		if rf.raftLog.Term(args.PrevIndex)== args.PrevTerm{
 			reply.Reject = false
 			committed :=  rf.raftLog.Commit()
 			if args.Commit > committed{
 				
-				rf.raftLog.SetCommit(rf.min(args.Commit, args.Entries[0].Index))
+				rf.raftLog.SetCommit(rf.min(args.Commit, args.PrevIndex))
 			}	
 			rf.becomeFollower(args.Term, args.From)
 		}
@@ -191,7 +191,7 @@ func (rf *Raft) kickHeartbeat() error {
 			_, next := rf.tracker.State(index)
 		
 			ents, _:= rf.raftLog.Logs(next-1, next)
-
+			
 			heartbeatMessage := Message{
 				From: rf.id,
 				To: index,
@@ -200,7 +200,8 @@ func (rf *Raft) kickHeartbeat() error {
 				Index: log_index,
 				LogTerm: log_term,
 				Commit: committed,
-				Entries: ents,
+				PrevTerm: ents[0].Term,
+				PrevIndex: ents[0].Index,
 			}
 
 			go rf.send(heartbeatMessage, nil)
@@ -411,7 +412,7 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 		return 
 	}
 	rf.electionElapsed = 0
-	appendRes := rf.raftLog.MayAppend(args.Entries)
+	appendRes := rf.raftLog.MayAppend(args.PrevIndex, args.PrevTerm, args.Entries)
 	commitIndex := rf.raftLog.Commit()
 	if appendRes && args.Commit > commitIndex{
 
@@ -491,7 +492,7 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 			return ok 
 		}
 		if ok && reply.Term == rf.Term{
-			rf.UpdateFollower(&args, reply)
+			//rf.UpdateFollower(&args, reply)
 		}
 
 		return ok 
@@ -659,7 +660,7 @@ func (rf *Raft)SyncCommand(follower int){
 		
 		rf.mu.Lock()	
 		_, next := rf.tracker.State(index)
-		last_index, last_term := rf.raftLog.Lastlog()
+		last_index, _:= rf.raftLog.Lastlog()
 		leaderCommit := rf.raftLog.Commit()
 		ents, _:= rf.raftLog.Logs(next-1, last_index +1)
 		// send AppendEntry Message
@@ -668,9 +669,10 @@ func (rf *Raft)SyncCommand(follower int){
 			Commit: leaderCommit,
 			To: index,
 			From: rf.id,
-			Entries: ents,
+			Entries: ents[1:],
 			Type:MsgApp,
-			LogTerm: last_term,
+			PrevTerm: ents[0].Term,
+			PrevIndex: ents[0].Index,
 		}
 		rf.mu.Unlock()
 		if last_index < next{
@@ -729,7 +731,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.persister = persister
 	rf.id = me
 	rf.vote = None 
-	rf.heartbeatTimeout = 15
+	rf.heartbeatTimeout = 10
 	rand.Seed(time.Now().UnixNano())
 	rf.raftLog = NewLog()
 	rf.applyChan  = applyCh	
