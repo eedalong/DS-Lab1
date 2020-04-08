@@ -29,9 +29,11 @@ import "time"
 // None is a placeholder node ID used when there is no leader.
 const None int = -1
 const noLimit = math.MaxUint64
-type StateType int 
 var lock sync.Mutex
-
+var command_lock sync.Mutex
+var SyncCalled int 
+var HeartbeatCalled int 
+var VoteCalled int
 const (
 	StateFollower = 0
 	StateCandidate = 1
@@ -82,16 +84,18 @@ type Raft struct {
 
 func (rf * Raft) becomeLeader(){
 	fmt.Println("INSTANCE ", rf.id, " BECOME LEADER WITH COMMIT", rf.raftLog.Commit())
-	
+	rf.mu.Lock()
 	// update info of myself 
 	rf.state = StateLeader
 	rf.lead = rf.id
-	
+	rf.mu.Unlock()
+	/*	
 	// broadCast info
 	index := 0 
 	log_index, log_term := rf.raftLog.Lastlog()
 	// RESET ALL NEXT INDEX AND MATCH INDEX
-	rf.tracker.ResetAll(len(rf.peers), log_index)
+	//rf.tracker.ResetAll(len(rf.peers), log_index)
+	
 	committed := rf.raftLog.Commit()
 	for index=0; index < len(rf.peers); index++{
 		if index == rf.id {
@@ -116,6 +120,7 @@ func (rf * Raft) becomeLeader(){
 		reply :=  &Message{} 
 		go rf.send(heartbeat, reply)
 	} 
+	*/
 }
 func (rf *Raft) FollowerApply(){
 	if rf.state != StateFollower{
@@ -139,7 +144,7 @@ func (rf *Raft) Heartbeat(args *Message, reply *Message){
 	//fmt.Println("INSTANCE ", rf.id, rf.Term, "RECEIVE HEARTBEAT FROM", args.From, args.Term)
 	reply.From = rf.id
 	reply.Term = rf.Term
-	reply.Reject = "TRUE"
+	reply.Reject = true
 	if rf.Term > args.Term{
 		return 
 	}
@@ -153,7 +158,7 @@ func (rf *Raft) Heartbeat(args *Message, reply *Message){
 		//rf.mu.Lock()
 		//fmt.Println("INSTANCE ", rf.id, "BECOME FOLLOWER OF ", args.From)
 		if rf.raftLog.Term(args.Entries[0].Index)== args.Entries[0].Term{
-			reply.Reject = "FALSE"
+			reply.Reject = false
 			committed :=  rf.raftLog.Commit()
 			if args.Commit > committed{
 				
@@ -161,7 +166,7 @@ func (rf *Raft) Heartbeat(args *Message, reply *Message){
 			}	
 			rf.becomeFollower(args.Term, args.From)
 		}
-		reply.Reject = "TRUE"
+		reply.Reject = true
 		return 
 	}
 	return 
@@ -211,7 +216,7 @@ func (rf * Raft) becomeCandidate() error{
 	rf.lead = None
 	rf.state = StateCandidate
 	rf.electionElapsed = 0
-	rf.electionTimeout = rand.Intn(20) + 20
+	rf.electionTimeout = rand.Intn(20) + 30
 	rf.Term ++
 	rf.vote = rf.id
 	rf.tracker.ClearVotes(len(rf.peers))
@@ -264,7 +269,7 @@ func (rf *Raft) Tick(){
 		rf.kickElection()
 		if rf.state == StateLeader{	
 			rf.UpdateLeader()
-			rf.SyncCommand(-1)
+			//rf.SyncCommand(-1)
 		}
 		if rf.state == StateFollower{
 			rf.FollowerApply()
@@ -342,7 +347,7 @@ func (rf *Raft) MayVote(args *Message, reply *Message){
 	defer rf.mu.Unlock()
 	reply.Type = MsgVoteResp
 	reply.From = rf.id
-	reply.Reject = "TRUE"
+	reply.Reject = true
 	reply.Term = rf.Term
 
 
@@ -351,32 +356,32 @@ func (rf *Raft) MayVote(args *Message, reply *Message){
 	}
 
 	if rf.vote == args.From{
-		reply.Reject = "FALSE"
+		reply.Reject = false
 		return 
 	}
 	// when leader is alive, ignore the request
 	if rf.lead != None && rf.electionElapsed < rf.electionTimeout{
 		
 	//	fmt.Println("INSTANCE ",rf.id,"REJECT ", args.From, "BECAUSE LEADER IS ALIVE", "DETAILS: ",args.Term, " ", rf.Term, " ", rf.vote, rf.lead)	
-		reply.Reject = "TRUE"
+		reply.Reject = true
 		return 
 	}
 	
 	// Your code here (2A, 2B).
         if rf.vote != None{
 		//fmt.Println("INSTANCE ",rf.id,"REJECT ", args.From, "BECAUSE ALREADY VOTED", "DETAILS: ",args.Term, " ", rf.Term, " ", rf.vote, rf.lead)	
-		reply.Reject = "TRUE"
+		reply.Reject = true
 		return 
 	}
 	if !rf.raftLog.MoreUpdate(args.Index, args.LogTerm){	
 	
 		//fmt.Println("INSTANCE ",rf.id,"REJECT ", args.From, "BECAUSE STALE DATA", args.Index, args.LogTerm, "MY LAST LOG", last_index, last_log)	
-		reply.Reject = "TRUE"
+		reply.Reject = true
 
 		return 
 	}
 	// GRANT A VOTE 
-	reply.Reject = "FALSE"
+	reply.Reject = false
 	rf.electionElapsed = 0
 	rf.vote = args.From
 	fmt.Println("INSTANCE ", rf.id, "VOTE FOR ", args.From, "DETAIL", rf.Term,args.Term)
@@ -396,13 +401,13 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 	reply.From = rf.id
 	reply.To = args.From
 	reply.Term = rf.Term
-	reply.Reject = "TRUE"
+	reply.Reject = true
 	if args.Term < rf.Term{
-		reply.Reject = "TRUE"
+		reply.Reject = true
 		return  
 	}
 	if args.Term > rf.Term{
-		reply.Reject = "TRUE"
+		reply.Reject = true
 		return 
 	}
 	rf.electionElapsed = 0
@@ -413,7 +418,7 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 		rf.raftLog.SetCommit(rf.min(args.Commit, args.Entries[len(args.Entries)-1].Index))
 	}
 	if appendRes{
-		reply.Reject = "FALSE"
+		reply.Reject = false
 		//fmt.Println("FOLLOWER", rf.id, " APPEND FROM LEADER", rf.lead, args.From, args.Entries)
 	}
 	return 
@@ -499,7 +504,7 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 			return ok
 		}
 		if ok && reply.Term == rf.Term{
-			rf.tracker.Update(reply.From, reply.Reject== "FALSE")	
+			rf.tracker.Update(reply.From, reply.Reject== false)	
 			// update Term 
 			granted := rf.tracker.Granted()
 		
@@ -545,20 +550,22 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	index := -1
 	term := rf.Term
 	isLeader := true
-
+	rf.mu.Unlock()
 	// check if i am the leader
 	if rf.state != StateLeader{
 		return index, term, false 
 	}
+	command_lock.Lock()
+	defer command_lock.Unlock()
 	// append log to its own log buffer
 	log_index :=rf.raftLog.Append(command, rf.Term)
 	
 	// start Sync
-	//rf.SyncCommand(-1)
+	rf.SyncCommand(-1)
+	time.Sleep(time.Millisecond)
 	// wait until commited
 	/*
 	for {
@@ -619,7 +626,7 @@ func (rf *Raft) UpdateLeader(){
 
 }
 func (rf *Raft) UpdateFollower(args *Message, reply *Message){
-	if reply.Reject == "TRUE"{
+	if reply.Reject == true{
 	//	fmt.Println("FOLLOWER", reply.From, "REJECT APPEND")
 		if rf.state != StateLeader{
 			return 
@@ -641,6 +648,7 @@ func (rf *Raft) UpdateFollower(args *Message, reply *Message){
 
 func (rf *Raft)SyncCommand(follower int){
 
+	SyncCalled ++ 
 	index := 0
 	for index=0;index<len(rf.peers); index++{
 		// check for each follower's nextIndex
@@ -656,12 +664,13 @@ func (rf *Raft)SyncCommand(follower int){
 		ents, _:= rf.raftLog.Logs(next-1, last_index +1)
 		// send AppendEntry Message
 		message := Message{
-			Term: last_term,
+			Term: rf.Term,
 			Commit: leaderCommit,
 			To: index,
 			From: rf.id,
 			Entries: ents,
 			Type:MsgApp,
+			LogTerm: last_term,
 		}
 		rf.mu.Unlock()
 		if last_index < next{
@@ -699,7 +708,7 @@ func (rf *Raft) becomeFollower(Term int, Lead int){
 	rf.tracker.ClearVotes(len(rf.peers))
 	rf.state = StateFollower
 	rf.electionElapsed = 0
-	rf.electionTimeout = rand.Intn(20) + 20
+	rf.electionTimeout = rand.Intn(20) + 30
 	rf.mu.Unlock()
 }
 //
@@ -720,7 +729,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.persister = persister
 	rf.id = me
 	rf.vote = None 
-	rf.heartbeatTimeout = 10
+	rf.heartbeatTimeout = 15
 	rand.Seed(time.Now().UnixNano())
 	rf.raftLog = NewLog()
 	rf.applyChan  = applyCh	
@@ -729,6 +738,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
         rf.becomeFollower(1, None)
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
+	SyncCalled = 0
+	VoteCalled = 0
+	HeartbeatCalled = 0
 	go rf.Tick()
 
 	return rf

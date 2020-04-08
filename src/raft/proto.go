@@ -121,6 +121,6 @@ type Message struct {
 	Index            int
 	Entries          []Entry
 	Commit           int
-	Reject           string
+	Reject           bool
 }
 
