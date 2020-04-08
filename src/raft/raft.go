@@ -268,19 +268,23 @@ func (rf  *Raft)kickElection() error {
 }
 
 func (rf *Raft) Tick(){
+	count := 0
 	for {
 		// sleep for a unit time 
-		time.Sleep(10 * time.Millisecond)
-		rf.kickHeartbeat()
-		rf.kickElection()
+		time.Sleep(5 * time.Millisecond)
+		if count == 0 {
+			rf.kickHeartbeat()
+			rf.kickElection()
+			if rf.state == StateLeader{	
+				rf.UpdateLeader()
+				rf.SyncCommand(-1)
+			}
+			if rf.state == StateFollower{
+				rf.FollowerApply()
+			}
+		}
+		count =  (count + 1)%2
 		rf.persist()
-		if rf.state == StateLeader{	
-			rf.UpdateLeader()
-			rf.SyncCommand(-1)
-		}
-		if rf.state == StateFollower{
-			rf.FollowerApply()
-		}
 		if rf.killed(){
 			break
 		}
