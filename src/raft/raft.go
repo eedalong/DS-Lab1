@@ -23,14 +23,16 @@ import "sync"
 import "sync/atomic"
 import "../labrpc"
 import "time"
-// import "bytes"
-// import "../labgob"
+import "bytes"
+import "../labgob"
 
 // None is a placeholder node ID used when there is no leader.
 const None int = -1
 const noLimit = math.MaxUint64
 var lock sync.Mutex
 var command_lock sync.Mutex
+var persist_lock sync.Mutex
+
 var SyncCalled int 
 var HeartbeatCalled int 
 var VoteCalled int
@@ -89,6 +91,7 @@ func (rf * Raft) becomeLeader(){
 	rf.state = StateLeader
 	rf.lead = rf.id
 	rf.mu.Unlock()
+	
 	/*	
 	// broadCast info
 	index := 0 
@@ -136,6 +139,7 @@ func (rf *Raft) FollowerApply(){
 			Command: ents[0].Data,
 			CommandIndex: ents[0].Index,
 		}
+		//fmt.Println("FOLLOWER", rf.id, "APPLIED DATA", ents)
 	}
 	rf.raftLog.SetApply(committed + 1)
 
@@ -223,6 +227,7 @@ func (rf * Raft) becomeCandidate() error{
 	rf.tracker.ClearVotes(len(rf.peers))
 	rf.tracker.Update(rf.id, true)
 	rf.mu.Unlock()
+	
 	return nil 
 
 }
@@ -268,6 +273,7 @@ func (rf *Raft) Tick(){
 		time.Sleep(10 * time.Millisecond)
 		rf.kickHeartbeat()
 		rf.kickElection()
+		rf.persist()
 		if rf.state == StateLeader{	
 			rf.UpdateLeader()
 			rf.SyncCommand(-1)
@@ -305,12 +311,28 @@ func (rf *Raft) GetState() (int, bool) {
 func (rf *Raft) persist() {
 	// Your code here (2C).
 	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
+	 persist_lock.Lock()
+	 defer persist_lock.Unlock()
+	 length := rf.raftLog.LastIndex() + 1
+	 ents, _:= rf.raftLog.Logs(0, length)
+	 committed := rf.raftLog.Commit()
+	 applied := rf.raftLog.Apply()
+
+	 w := new(bytes.Buffer)
+	 e := labgob.NewEncoder(w)
+
+	 e.Encode(rf.Term)
+	 e.Encode(rf.vote)
+	 e.Encode(committed)
+	 e.Encode(applied)
+
+	 e.Encode(length)
+	 
+	 e.Encode(ents)
+	 
+	 data := w.Bytes()
+	 //fmt.Println("INSTACE", rf.id, "PERSIST DATA", rf.Term, rf.vote, ents)
+	 rf.persister.SaveRaftState(data)
 }
 
 
@@ -323,17 +345,27 @@ func (rf *Raft) readPersist(data []byte) {
 	}
 	// Your code here (2C).
 	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	 r := bytes.NewBuffer(data)
+	 d := labgob.NewDecoder(r)
+	 var term int
+	 var vote int
+	 var length int 
+	 var ents []Entry
+	 var committed, applied int 
+	 if d.Decode(&term) != nil ||d.Decode(&vote) != nil ||d.Decode(&committed) != nil||d.Decode(&applied) != nil || d.Decode(&length)!= nil {
+	   fmt.Println("DECODE ERROR")
+	 } else {
+             		
+	     rf.Term = term
+	     rf.vote = vote
+	     rf.raftLog.SetApply(applied)
+	     rf.raftLog.SetCommit(committed)
+	     ents =  make([]Entry, length)
+	     d.Decode(&ents)
+		
+	     //fmt.Println("INSTANCE", rf.id, "READ PERSIST DATA", term ,vote, ents)	
+	     rf.raftLog.InitEnts(ents)
+	}
 }
 
 
@@ -386,7 +418,7 @@ func (rf *Raft) MayVote(args *Message, reply *Message){
 	rf.electionElapsed = 0
 	rf.vote = args.From
 	fmt.Println("INSTANCE ", rf.id, "VOTE FOR ", args.From, "DETAIL", rf.Term,args.Term)
-
+	
 }
 func (rf *Raft) min(val1, val2 int)int {
 	if val1 > val2{
@@ -420,6 +452,7 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 	}
 	if appendRes{
 		reply.Reject = false
+		
 		//fmt.Println("FOLLOWER", rf.id, " APPEND FROM LEADER", rf.lead, args.From, args.Entries)
 	}
 	return 
@@ -566,6 +599,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	
 	// start Sync
 	rf.SyncCommand(-1)
+	
 	time.Sleep(time.Millisecond)
 	// wait until commited
 	/*

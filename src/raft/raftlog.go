@@ -116,5 +116,7 @@ func (rflog *RaftLog) SetApply(val int){
 	return 
 
 }
-
+func (rflog *RaftLog) InitEnts(ents []Entry){
+	rflog.storage.InitEnts(ents)
+}
 

@@ -549,7 +549,6 @@ func TestPersist12C(t *testing.T) {
 	cfg.begin("Test (2C): basic persistence")
 
 	cfg.one(11, servers, true)
-
 	// crash and re-start all
 	for i := 0; i < servers; i++ {
 		cfg.start1(i)
@@ -558,9 +557,7 @@ func TestPersist12C(t *testing.T) {
 		cfg.disconnect(i)
 		cfg.connect(i)
 	}
-
 	cfg.one(12, servers, true)
-
 	leader1 := cfg.checkOneLeader()
 	cfg.disconnect(leader1)
 	cfg.start1(leader1)
@@ -814,7 +811,6 @@ func TestFigure8Unreliable2C(t *testing.T) {
 }
 
 func internalChurn(t *testing.T, unreliable bool) {
-
 	servers := 5
 	cfg := make_config(t, servers, unreliable)
 	defer cfg.cleanup()

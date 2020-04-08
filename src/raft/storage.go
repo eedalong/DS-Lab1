@@ -127,4 +127,9 @@ func(ms *MemoryStorage) Delete(entry Entry){
 	return
 }
 
+func(ms *MemoryStorage) InitEnts(ents []Entry){
+	ms.Lock()
+	defer ms.Unlock()
+	ms.ents = append(make([]Entry,0),ents...)
+}
 
