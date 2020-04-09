@@ -30,6 +30,7 @@ import "../labgob"
 const None int = -1
 const noLimit = math.MaxUint64
 var persist_lock sync.Mutex
+var vote_lock sync.Mutex
 
 var SyncCalled int 
 var HeartbeatCalled int 
@@ -368,6 +369,8 @@ func (rf *Raft) readPersist(data []byte) {
 //
 func (rf *Raft) MayVote(args *Message, reply *Message){
 	// RESET VOTE AND TERM IF COMMING REQUEST CONTAINS LARGER TERM
+	vote_lock.Lock()
+	defer vote_lock.Unlock()
 	rf.mu.Lock()
 	if args.Term > rf.Term{
 		rf.mu.Unlock()
@@ -640,7 +643,6 @@ func (rf *Raft) UpdateLeader(){
 		rf.mu.Unlock()
 		return 
 	}
-	rf.mu.Unlock()
 	committed:= rf.raftLog.Commit()
 	if committed == 0{
 		committed ++
@@ -662,7 +664,7 @@ func (rf *Raft) UpdateLeader(){
 		}
 		committed ++
 	}
-
+	rf.mu.Unlock()
 	committed  = rf.raftLog.Commit()
 	applied := rf.raftLog.Apply()
 	
@@ -685,7 +687,7 @@ func (rf *Raft) UpdateFollower(args *Message, reply *Message){
 			return 
 		}
 		rf.tracker.DecrNext(reply.From, 1)
-		rf.SyncCommand(reply.From)	
+		//rf.SyncCommand(reply.From)	
 		return
 	}
 
