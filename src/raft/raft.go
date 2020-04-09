@@ -91,8 +91,8 @@ func (rf * Raft) becomeLeader(){
 	rf.state = StateLeader
 	rf.lead = rf.id
 	rf.heartbeatElapsed = 5
-	//last_index := rf.raftLog.LastIndex()
-	//rf.tracker.ResetAll(len(rf.peers), last_index)
+	last_index := rf.raftLog.LastIndex()
+	rf.tracker.ResetAll(len(rf.peers), last_index)
 	rf.mu.Unlock()
 }
 
@@ -205,9 +205,9 @@ func (rf * Raft) becomeCandidate() error{
 	rf.electionElapsed = 0
 	rf.electionTimeout = rand.Intn(20) + 30
 	rf.Term ++
-	rf.vote = rf.id
+	rf.vote = None
 	rf.tracker.ClearVotes(len(rf.peers))
-	rf.tracker.Update(rf.id, true)
+	//rf.tracker.Update(rf.id, true)
 	rf.mu.Unlock()
 	
 	return nil 
@@ -448,7 +448,6 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 	}
 	*/
 	rf.mu.Unlock()
-	rf.becomeFollower(args.Term, args.From)
 
 	appendRes := rf.raftLog.MayAppend(args.PrevIndex, args.PrevTerm, args.Entries)
 	if appendRes && args.Commit > rf.raftLog.Commit(){
@@ -456,9 +455,15 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 		rf.raftLog.SetCommit(rf.min(args.Commit, args.Entries[len(args.Entries)-1].Index))
 	}
 	if appendRes{
+		
+		rf.becomeFollower(args.Term, args.From)
 		reply.Reject = false
 		
 		//fmt.Println("FOLLOWER", rf.id, " APPEND FROM LEADER", rf.lead, args.From, args.Entries)
+	}else{
+		conflict_index, conflict_term := rf.raftLog.FindConflict(args.PrevTerm, args.PrevIndex)
+		reply.ConflictIndex = conflict_index
+		reply.ConflictTerm = conflict_term	
 	}
 	return 
 }
@@ -554,7 +559,7 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 			return ok
 		}
 		if ok && reply.Term == rf.Term{
-			if rf.state == StateLeader{
+			if rf.state != StateCandidate{
 				rf.mu.Unlock()
 				return ok  
 			}
@@ -563,7 +568,10 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 			granted := rf.tracker.Granted()
 		
 			// check if i win most votes 
-			if 2 * granted > len(rf.peers){
+			if 2 * granted > len(rf.peers) || (rf.vote == None && 2*(granted +1)> len(rf.peers)){
+				if rf.vote == None{
+					rf.vote = rf.id
+				}
 				rf.mu.Unlock()
 				rf.becomeLeader()
 				return ok 
@@ -684,6 +692,7 @@ func (rf *Raft) UpdateLeader(){
 	rf.raftLog.SetApply(committed + 1)
 
 }
+
 func (rf *Raft) UpdateFollower(args *Message, reply *Message){
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -692,7 +701,9 @@ func (rf *Raft) UpdateFollower(args *Message, reply *Message){
 		if rf.state != StateLeader{
 			return 
 		}
-		rf.tracker.DecrNext(reply.From, 1)
+		//if reply.ConflictTerm == None{
+		rf.tracker.SetState(reply.From, 0, reply.ConflictIndex)
+		//}
 		//rf.SyncCommand(reply.From)	
 		return
 	}

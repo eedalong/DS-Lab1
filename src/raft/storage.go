@@ -126,4 +126,14 @@ func(ms *MemoryStorage) InitEnts(ents []Entry){
 	defer ms.Unlock()
 	ms.ents = append(make([]Entry,0),ents...)
 }
-
+func (ms *MemoryStorage) FindFirst(term int) int{
+	ms.Lock()
+	defer ms.Unlock()
+	index := 0
+	for index = 0; index < len(ms.ents); index++{
+		if ms.ents[index].Term == term{
+			return index
+		}
+	}
+	return index 
+}

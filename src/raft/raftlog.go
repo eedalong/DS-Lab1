@@ -121,3 +121,12 @@ func (rflog *RaftLog) InitEnts(ents []Entry){
 	rflog.storage.InitEnts(ents)
 }
 
+func (rflog *RaftLog) FindConflict(term, index int) (int, int){
+	if index > rflog.LastIndex(){
+		return rflog.LastIndex() +1, None
+	}
+	conflict_term, _ := rflog.storage.Term(index)
+	conflict_index := rflog.storage.FindFirst(conflict_term)
+	return conflict_index, conflict_term
+
+}

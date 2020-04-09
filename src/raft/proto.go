@@ -125,5 +125,7 @@ type Message struct {
 	PrevIndex	 int
 	PrevTerm	 int
 	TermSent	 int
+	ConflictIndex    int
+	ConflictTerm	 int 
 }
 
