@@ -50,6 +50,7 @@ func (rflog *RaftLog) MoreUpdate(log_index int, log_term int) bool{
 }
  
 func (rflog *RaftLog) Append(command interface{}, Term int) int{
+	
 	last_index, _ := rflog.storage.LastIndex()
 	newIndex := last_index + 1
 	entry  := Entry{

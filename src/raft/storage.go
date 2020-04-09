@@ -106,9 +106,9 @@ func (ms *MemoryStorage) firstIndex() int {
 // ONLY DELETE LOGS FOLLOWING THE LOG THAT DOESNT MATCH 
 func (ms *MemoryStorage) Append(ents []Entry)(bool, error){
 
-	last_index, _ := ms.LastIndex()
 	ms.Lock()
 	defer ms.Unlock()
+	last_index := ms.lastIndex()
 	offset := ms.ents[0].Index
 	index :=0
 	for index =0; index < len(ents); index++{
@@ -119,12 +119,6 @@ func (ms *MemoryStorage) Append(ents []Entry)(bool, error){
 		}
 	}
 	return true, nil 
-}
-func(ms *MemoryStorage) Delete(entry Entry){
-	ms.Lock()
-	defer ms.Unlock()
-	ms.ents =  ms.ents[: len(ms.ents)-1]
-	return
 }
 
 func(ms *MemoryStorage) InitEnts(ents []Entry){

@@ -457,9 +457,10 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			// somebody claimed to be the leader and to have
 			// submitted our command; wait a while for agreement.
 			t1 := time.Now()
+			nd_bkp := 0
 			for time.Since(t1).Seconds() < 2 {
 				nd, cmd1 := cfg.nCommitted(index)
-				
+				nd_bkp = nd
 				//fmt.Println("CHECK ND = ", nd, "INDEX = ", index)
 				if nd > 0 && nd >= expectedServers {
 					// committed
@@ -467,11 +468,13 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 						// and it was the command we submitted.
 						return index
 					}
+					
+					fmt.Println("COMMAND NOT CONSISTENT", cmd, cmd1)
 				}
 				time.Sleep(20 * time.Millisecond)
 			}
 			if retry == false {
-				cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
+				cfg.t.Fatalf("one(%v) failed to reach agreement, ONLY (%v) committed the value", cmd, nd_bkp)
 			}
 		} else {
 			time.Sleep(50 * time.Millisecond)
