@@ -433,8 +433,6 @@ func (rf *Raft) min(val1, val2 int)int {
 
 func (rf *Raft) AppendEntries(args* Message, reply *Message){
 
-	rf.mu.Lock()
-	defer rf.mu.Unlock()	
 	reply.From = rf.id
 	reply.To = args.From
 	reply.Term = rf.Term
@@ -447,7 +445,7 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 		reply.Reject = true
 		return 
 	}
-	rf.electionElapsed = 0
+	rf.becomeFollower(args.Term, args.From)
 	appendRes := rf.raftLog.MayAppend(args.PrevIndex, args.PrevTerm, args.Entries)
 	commitIndex := rf.raftLog.Commit()
 	if appendRes && args.Commit > commitIndex{
