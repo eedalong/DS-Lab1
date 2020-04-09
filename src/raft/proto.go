@@ -124,5 +124,6 @@ type Message struct {
 	Reject           bool
 	PrevIndex	 int
 	PrevTerm	 int
+	TermSent	 int
 }
 

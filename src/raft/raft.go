@@ -89,13 +89,18 @@ func (rf * Raft) becomeLeader(){
 	rf.state = StateLeader
 	rf.lead = rf.id
 	rf.heartbeatElapsed = 5
+	last_index := rf.raftLog.LastIndex()
+	rf.tracker.ResetAll(len(rf.peers), last_index)
 	rf.mu.Unlock()
 }
 
 func (rf *Raft) FollowerApply(){
+	rf.mu.Lock()
 	if rf.state != StateFollower{
+		rf.mu.Unlock()
 		return 
 	}
+	rf.mu.Unlock()
 	committed := rf.raftLog.Commit()
 	applied := rf.raftLog.Apply()
 	for ;applied <= committed; applied ++ {
@@ -260,11 +265,11 @@ func (rf *Raft) Tick(){
 			rf.kickHeartbeat()
 			rf.kickElection()
 			if rf.state == StateLeader{	
-				rf.UpdateLeader()
+				go rf.UpdateLeader()
 				rf.SyncCommand(-1)
 			}
 			if rf.state == StateFollower{
-				rf.FollowerApply()
+				go rf.FollowerApply()
 			}
 		}
 		count =  (count + 1)%2
@@ -456,6 +461,7 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 
 
 func (rf *Raft) RequestVote(args *Message, reply *Message) {
+	reply.TermSent = args.Term
 	if args.Type == MsgVote{
 		rf.MayVote(args, reply)
 		return
@@ -507,8 +513,12 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 		//fmt.Println(rf.id, "WITH TERM", rf.Term, "SEND HEARTBEAT TO", args.To)
 		ok := rf.peers[args.To].Call("Raft.RequestVote", &args, reply)
 		
+			
 		rf.tracker.Active(reply.From, ok)
 		rf.mu.Lock()
+		if ok && reply.TermSent != args.Term{
+			return ok 
+		}
 		/*
 		if rf.state == StateLeader && !rf.tracker.CheckQuroum(len(rf.peers)) {
 			fmt.Println("INSTANCE ", rf.id, "BACK OFF FROM LEADER")
@@ -530,7 +540,10 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 		reply = &Message{}
 		ok := rf.peers[args.To].Call("Raft.RequestVote", &args, reply)
 		
-		rf.mu.Lock()	
+		rf.mu.Lock()
+		if ok && reply.TermSent != args.Term{
+			return ok 
+		}	
 		if reply.Term > rf.Term{
 			rf.mu.Unlock()
 			rf.becomeFollower(reply.Term, None)
@@ -560,6 +573,12 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 		
 		ok := rf.peers[args.To].Call("Raft.RequestVote", &args, reply)
 		rf.mu.Lock()
+		
+		if ok && reply.TermSent != args.Term{
+
+			return ok 
+		}	
+	
 		if ok && rf.state == StateLeader && reply.Term > rf.Term{
 			
 			fmt.Println("INSTANCE ", rf.id, "BACK OFF FROM LEADER", reply.Term ,rf.Term)
@@ -616,6 +635,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) UpdateLeader(){
 	//rf.mu.Lock()
 	//defer rf.mu.Unlock()
+	rf.mu.Lock()
+	if rf.state != StateLeader{
+		rf.mu.Unlock()
+		return 
+	}
+	rf.mu.Unlock()
 	committed:= rf.raftLog.Commit()
 	if committed == 0{
 		committed ++
