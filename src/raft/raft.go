@@ -546,7 +546,8 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 			
 		rf.tracker.Active(reply.From, ok)
 		rf.mu.Lock()
-		if ok && reply.TermSent != args.Term{
+		if ok && reply.TermSent != rf.Term{
+			rf.mu.Unlock()
 			return ok 
 		}
 		/*
@@ -571,7 +572,8 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 		ok := rf.peers[args.To].Call("Raft.RequestVote", &args, reply)
 		
 		rf.mu.Lock()
-		if ok && reply.TermSent != args.Term{
+		if ok && reply.TermSent != rf.Term{
+			rf.mu.Unlock()
 			return ok 
 		}	
 		if reply.Term > rf.Term{
@@ -607,8 +609,8 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 		ok := rf.peers[args.To].Call("Raft.RequestVote", &args, reply)
 		rf.mu.Lock()
 		
-		if ok && reply.TermSent != args.Term{
-
+		if ok && reply.TermSent != rf.Term{
+			rf.mu.Unlock()
 			return ok 
 		}	
 	
