@@ -611,6 +611,7 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 		
 		if ok && reply.TermSent != rf.Term{
 			rf.mu.Unlock()
+
 			return ok 
 		}	
 	
