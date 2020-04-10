@@ -3,7 +3,7 @@ iter=1
 
 while true;
 do
-  go test  || break;
+  go test || break;
   echo "PASS ${iter}-th iteration"
   
   iter=$(($iter+1))
