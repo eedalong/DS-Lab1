@@ -62,8 +62,7 @@ func (ms *MemoryStorage) Entries(lo, hi int) ([]Entry, error) {
 		return nil, ErrUnavailable
 	}
 	*/
-
-	ents := ms.ents[lo-offset : hi-offset]
+	ents:= append(make([]Entry,0), ms.ents[lo-offset:hi-offset]...)
 	return ents, nil
 }
 // Term implements the Storage interface.
@@ -78,6 +77,7 @@ func (ms *MemoryStorage) Term(i int) (int, error) {
 	if int(i-offset) >= len(ms.ents) {
 		return 0, ErrUnavailable
 	}
+
 	return ms.ents[i-offset].Term, nil
 }
 

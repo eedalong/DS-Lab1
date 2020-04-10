@@ -139,6 +139,7 @@ func (rf *Raft) Heartbeat(args *Message, reply *Message){
 	if (rf.lead == None || rf.lead == args.From){
 		//rf.mu.Lock()
 		//fmt.Println("INSTANCE ", rf.id, "BECOME FOLLOWER OF ", args.From)
+		
 		if rf.raftLog.Term(args.PrevIndex)== args.PrevTerm{
 			reply.Reject = false
 			if args.Commit > rf.raftLog.Commit(){
@@ -146,11 +147,15 @@ func (rf *Raft) Heartbeat(args *Message, reply *Message){
 				rf.raftLog.SetCommit(rf.min(args.Commit, args.PrevIndex))
 			}
 			rf.mu.Unlock()	
+			
 			rf.becomeFollower(args.Term, args.From)
 			return 
 		}
 		rf.mu.Unlock()
+		
+		rf.becomeFollower(args.Term, args.From)
 		reply.Reject = true
+		
 		return 
 	}
 	rf.mu.Unlock()
@@ -449,6 +454,7 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 	*/
 	rf.mu.Unlock()
 
+	rf.becomeFollower(args.Term, args.From)
 	appendRes := rf.raftLog.MayAppend(args.PrevIndex, args.PrevTerm, args.Entries)
 	if appendRes && args.Commit > rf.raftLog.Commit(){
 
@@ -456,7 +462,6 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 	}
 	if appendRes{
 		
-		rf.becomeFollower(args.Term, args.From)
 		reply.Reject = false
 		
 		//fmt.Println("FOLLOWER", rf.id, " APPEND FROM LEADER", rf.lead, args.From, args.Entries)
@@ -637,11 +642,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		rf.mu.Unlock()
 		return index, term, false 
 	}
-	fmt.Println("LEADER ", rf.id, "RECEIVE COMMAND", command)	
 	// append log to its own log buffer
 	log_index :=rf.raftLog.Append(command, rf.Term)
 	
-	fmt.Println("LEADER", rf.id, " RETURN INDEX WITH", log_index)	
 	// start Sync
 	rf.mu.Unlock()
 	
@@ -737,6 +740,7 @@ func (rf *Raft)SyncCommand(follower int){
 		last_index, _:= rf.raftLog.Lastlog()
 		leaderCommit := rf.raftLog.Commit()
 		ents, _:= rf.raftLog.Logs(next-1, last_index +1)
+		ents_send := append(make([]Entry,0), ents...)
 		// send AppendEntry Message
 		fmt.Println("LEADER", rf.id, "SYNC COMMAND TO", index, next-1, last_index+1)
 		rf.mu.Lock()
@@ -745,7 +749,7 @@ func (rf *Raft)SyncCommand(follower int){
 			Commit: leaderCommit,
 			To: index,
 			From: rf.id,
-			Entries: ents[1:],
+			Entries: ents_send[1:],
 			Type:MsgApp,
 			PrevTerm: ents[0].Term,
 			PrevIndex: ents[0].Index,
@@ -770,6 +774,7 @@ func (rf *Raft)SyncCommand(follower int){
 //
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
+	
 	// Your code here, if desired.
 }
 

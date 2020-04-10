@@ -542,7 +542,7 @@ loop:
 }
 
 func TestPersist12C(t *testing.T) {
-	return 
+	return
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -761,6 +761,7 @@ func TestUnreliableAgree2C(t *testing.T) {
 }
 
 func TestFigure8Unreliable2C(t *testing.T) {
+	
 	servers := 5
 	cfg := make_config(t, servers, true)
 	defer cfg.cleanup()
@@ -960,7 +961,7 @@ func internalChurn(t *testing.T, unreliable bool) {
 }
 
 func TestReliableChurn2C(t *testing.T) {
-	return 
+	return
 	internalChurn(t, false)
 }
 
