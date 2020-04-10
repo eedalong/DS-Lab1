@@ -559,7 +559,7 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 		*/
 		if ok && rf.state ==  StateLeader && reply.Term > rf.Term{
 			
-			fmt.Println("INSTANCE ", rf.id, "BACK OFF FROM LEADER", reply.Term ,rf.Term)
+			//fmt.Println("INSTANCE ", rf.id, "BACK OFF FROM LEADER", reply.Term ,rf.Term)
 			rf.mu.Unlock()
 			rf.becomeFollower(reply.Term, None)
 			return ok 
@@ -571,7 +571,7 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 		ok := rf.peers[args.To].Call("Raft.RequestVote", &args, reply)
 		
 		rf.mu.Lock()
-		if ok && reply.TermSent != args.Term{
+		if ok && reply.TermSent != rf.Term{
 			return ok 
 		}	
 		if reply.Term > rf.Term{
@@ -607,14 +607,14 @@ func (rf *Raft) send(args Message, reply *Message ) bool {
 		ok := rf.peers[args.To].Call("Raft.RequestVote", &args, reply)
 		rf.mu.Lock()
 		
-		if ok && reply.TermSent != args.Term{
+		if ok && reply.TermSent != rf.Term{
 
 			return ok 
 		}	
 	
 		if ok && rf.state == StateLeader && reply.Term > rf.Term{
 			
-			fmt.Println("INSTANCE ", rf.id, "BACK OFF FROM LEADER", reply.Term ,rf.Term)
+			//fmt.Println("INSTANCE ", rf.id, "BACK OFF FROM LEADER", reply.Term ,rf.Term)
 			rf.mu.Unlock()
 			rf.becomeFollower(reply.Term, None)
 			return ok
