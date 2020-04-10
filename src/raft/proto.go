@@ -113,9 +113,9 @@ type Entry struct {
 
 type Message struct {
 	Type             MessageType
-	To               int 
-	From             int 
-	Term             int 
+	To               int
+	From             int
+	Term             int
 	Lead		 int
 	LogTerm          int
 	Index            int
@@ -126,6 +126,6 @@ type Message struct {
 	PrevTerm	 int
 	TermSent	 int
 	ConflictIndex    int
-	ConflictTerm	 int 
+	ConflictTerm	 int
 }
 

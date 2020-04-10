@@ -36,7 +36,9 @@ var start_lock sync.Mutex
 var request_lock sync.Mutex
 var leader_update_lock sync.Mutex
 var follower_update_lock sync.Mutex
-
+var append_lock sync.Mutex
+var heartbeat_lock sync.Mutex
+//var sync_lock sync.Mutex
 var SyncCalled int 
 var HeartbeatCalled int 
 var VoteCalled int
@@ -89,12 +91,12 @@ type Raft struct {
 }
 
 func (rf * Raft) becomeLeader(){
-	fmt.Println("INSTANCE ", rf.id, " BECOME LEADER WITH COMMIT", rf.raftLog.Commit())
+	//fmt.Println("INSTANCE ", rf.id, " BECOME LEADER WITH COMMIT", rf.raftLog.Commit())
 	rf.mu.Lock()
 	// update info of myself 
 	rf.state = StateLeader
 	rf.lead = rf.id
-	rf.heartbeatElapsed = 5
+	rf.heartbeatElapsed = 8
 	last_index := rf.raftLog.LastIndex()
 	rf.tracker.ResetAll(len(rf.peers), last_index)
 	rf.mu.Unlock()
@@ -126,6 +128,8 @@ func (rf *Raft) FollowerApply(){
 }
 func (rf *Raft) Heartbeat(args *Message, reply *Message){
 	//fmt.Println("INSTANCE ", rf.id, rf.Term, "RECEIVE HEARTBEAT FROM", args.From, args.Term)
+	heartbeat_lock.Lock()
+	defer heartbeat_lock.Unlock()
 	rf.mu.Lock()
 	reply.From = rf.id
 	reply.Term = rf.Term
@@ -215,7 +219,7 @@ func (rf * Raft) becomeCandidate() error{
 	rf.lead = None
 	rf.state = StateCandidate
 	rf.electionElapsed = 0
-	rf.electionTimeout = rand.Intn(20) + 30
+	rf.electionTimeout = rand.Intn(10) + 30
 	rf.Term ++
 	rf.vote = None
 	rf.tracker.ClearVotes(len(rf.peers))
@@ -274,10 +278,10 @@ func (rf *Raft) Tick(){
 	count := 0
 	for {
 		// sleep for a unit time 
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(time.Millisecond)
 		if count == 0 {
-			rf.kickHeartbeat()
-			rf.kickElection()
+			go rf.kickHeartbeat()
+			go rf.kickElection()
 			if rf.state == StateLeader{	
 				go rf.UpdateLeader()
 				rf.SyncCommand(-1)
@@ -286,7 +290,8 @@ func (rf *Raft) Tick(){
 				go rf.FollowerApply()
 			}
 		}
-		count =  (count + 1)%2
+	        	
+		count =  (count + 1)%10
 		go rf.persist()
 		if rf.killed(){
 			break
@@ -415,13 +420,13 @@ func (rf *Raft) MayVote(args *Message, reply *Message){
 	
 	// Your code here (2A, 2B).
         if rf.vote != None{
-		fmt.Println("INSTANCE ",rf.id,"REJECT ", args.From, "BECAUSE ALREADY VOTED", "DETAILS: ",args.Term, " ", rf.Term, " ", rf.vote, rf.lead)	
+		//fmt.Println("INSTANCE ",rf.id,"REJECT ", args.From, "BECAUSE ALREADY VOTED", "DETAILS: ",args.Term, " ", rf.Term, " ", rf.vote, rf.lead)	
 		reply.Reject = true
 		return 
 	}
 	if !rf.raftLog.MoreUpdate(args.Index, args.LogTerm){	
 	
-		fmt.Println("INSTANCE ",rf.id,"REJECT ", args.From, "BECAUSE STALE DATA", args.Index, args.LogTerm)	
+		//fmt.Println("INSTANCE ",rf.id,"REJECT ", args.From, "BECAUSE STALE DATA", args.Index, args.LogTerm)	
 		reply.Reject = true
 
 		return 
@@ -430,7 +435,7 @@ func (rf *Raft) MayVote(args *Message, reply *Message){
 	reply.Reject = false
 	rf.electionElapsed = 0
 	rf.vote = args.From
-	fmt.Println("INSTANCE ", rf.id, "VOTE FOR ", args.From, "DETAIL", rf.Term,args.Term)
+	//fmt.Println("INSTANCE ", rf.id, "VOTE FOR ", args.From, "DETAIL", rf.Term,args.Term)
 	
 }
 func (rf *Raft) min(val1, val2 int)int {
@@ -441,6 +446,8 @@ func (rf *Raft) min(val1, val2 int)int {
 }
 
 func (rf *Raft) AppendEntries(args* Message, reply *Message){
+	append_lock.Lock()
+	defer append_lock.Unlock()
 	rf.mu.Lock()
 
 	reply.From = rf.id
@@ -468,7 +475,7 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 		rf.raftLog.SetCommit(rf.min(args.Commit, args.Entries[len(args.Entries)-1].Index))
 	}
 	if appendRes{
-		
+		rf.persist()	
 		reply.Reject = false
 		
 		//fmt.Println("FOLLOWER", rf.id, " APPEND FROM LEADER", rf.lead, args.From, args.Entries)
@@ -656,7 +663,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	
 	// start Sync
 	rf.mu.Unlock()
-	
+	rf.persist()	
 	return log_index, term, isLeader
 }
 func (rf *Raft) UpdateLeader(){
@@ -802,7 +809,7 @@ func (rf *Raft) becomeFollower(Term int, Lead int){
 	rf.tracker.ClearVotes(len(rf.peers))
 	rf.state = StateFollower
 	rf.electionElapsed = 0
-	rf.electionTimeout = rand.Intn(20) + 30
+	rf.electionTimeout = rand.Intn(10) + 30
 	rf.mu.Unlock()
 }
 //

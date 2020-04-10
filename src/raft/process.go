@@ -100,8 +100,10 @@ func (tracker *ProgressTracker) SetState(follower int, match int, next int){
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
 	//fmt.Println("UPDATE STATE FOR FOLLOWER", follower, match, next)
-	tracker.Progresses[follower].Match = match
-	tracker.Progresses[follower].Next = next
+	if match > tracker.Progresses[follower].Match{
+		tracker.Progresses[follower].Match = match
+		tracker.Progresses[follower].Next = next
+	}
 	return 
 	
 }
