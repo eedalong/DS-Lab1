@@ -29,9 +29,13 @@ import "../labgob"
 // None is a placeholder node ID used when there is no leader.
 const None int = -1
 const noLimit = math.MaxUint64
+// locks 
 var persist_lock sync.Mutex
 var vote_lock sync.Mutex
 var start_lock sync.Mutex
+var request_lock sync.Mutex
+var leader_update_lock sync.Mutex
+var follower_update_lock sync.Mutex
 
 var SyncCalled int 
 var HeartbeatCalled int 
@@ -97,6 +101,8 @@ func (rf * Raft) becomeLeader(){
 }
 
 func (rf *Raft) FollowerApply(){
+	follower_update_lock.Lock()
+	defer follower_update_lock.Unlock()
 	rf.mu.Lock()
 	if rf.state != StateFollower{
 		rf.mu.Unlock()
@@ -182,7 +188,8 @@ func (rf *Raft) kickHeartbeat() error {
 			_, next := rf.tracker.State(index)
 		
 			ents, _:= rf.raftLog.Logs(next-1, next)
-			
+		        ents_send := append(make([]Entry, 0), ents...)
+			rf.mu.Lock()	
 			heartbeatMessage := Message{
 				From: rf.id,
 				To: index,
@@ -191,10 +198,10 @@ func (rf *Raft) kickHeartbeat() error {
 				Index: log_index,
 				LogTerm: log_term,
 				Commit: committed,
-				PrevTerm: ents[0].Term,
-				PrevIndex: ents[0].Index,
+				PrevTerm: ents_send[0].Term,
+				PrevIndex: ents_send[0].Index,
 			}
-
+			rf.mu.Unlock()
 			go rf.send(heartbeatMessage, nil)
 		}
 	}
@@ -475,6 +482,8 @@ func (rf *Raft) AppendEntries(args* Message, reply *Message){
 
 
 func (rf *Raft) RequestVote(args *Message, reply *Message) {
+	request_lock.Lock()
+	defer request_lock.Unlock()
 	reply.TermSent = args.Term
 	if args.Type == MsgVote{
 		rf.MayVote(args, reply)
@@ -653,6 +662,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) UpdateLeader(){
 	//rf.mu.Lock()
 	//defer rf.mu.Unlock()
+	leader_update_lock.Lock()
+	defer leader_update_lock.Unlock()
 	rf.mu.Lock()
 	if rf.state != StateLeader{
 		rf.mu.Unlock()
@@ -742,7 +753,7 @@ func (rf *Raft)SyncCommand(follower int){
 		ents, _:= rf.raftLog.Logs(next-1, last_index +1)
 		ents_send := append(make([]Entry,0), ents...)
 		// send AppendEntry Message
-		fmt.Println("LEADER", rf.id, "SYNC COMMAND TO", index, next-1, last_index+1)
+		//fmt.Println("LEADER", rf.id, "SYNC COMMAND TO", index, next-1, last_index+1)
 		rf.mu.Lock()
 		message := Message{
 			Term: rf.Term,
